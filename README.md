@@ -1,4 +1,4 @@
-# CodeGuardian AI Auto-Fix Agent
+#### CodeGuardian AI Auto-Fix Agent
 
 This repository contains an automated SonarQube remediation agent that:
 
