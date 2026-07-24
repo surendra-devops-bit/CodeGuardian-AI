@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+
+# pytest
+.pytest_cache/
+
+# Sonar & AI artifacts
+.ai_fix.patch
+.ai_fix_report.json
+.ai_fix.log
+.ai_fix_dryrun_*.patch
+.ai_fix_failed_*.patch

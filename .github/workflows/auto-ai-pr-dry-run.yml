@@ -1,0 +1,117 @@
+name: Auto AI PR Dry Run
+
+on:
+  pull_request:
+
+jobs:
+  ai-dry-run:
+    if: ${{ secrets.SONAR_HOST_URL && secrets.SONAR_TOKEN && secrets.SONAR_PROJECT_KEY && secrets.LLM_API_KEY && secrets.GITHUB_TOKEN }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run AI auto-fix dry run
+        run: |
+          python scripts/auto_ai_fix.py --dry-run
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          BUILD_COMMAND: echo 'Skipping build in PR dry-run'
+          TEST_COMMAND: echo 'Skipping test in PR dry-run'
+          AI_FIX_BRANCH_PREFIX: auto-ai-fix
+          TARGET_BRANCH: main
+
+      - name: Capture dry-run diff
+        id: capture_diff
+        run: |
+          echo "diff_exists=false" >> $GITHUB_OUTPUT
+          git diff -- . > ai_fix_dry_run.diff || true
+          if [ -s ai_fix_dry_run.diff ]; then
+            echo "diff_exists=true" >> $GITHUB_OUTPUT
+            echo 'Dry-run diff written to ai_fix_dry_run.diff'
+          else
+            echo 'No tracked source changes were produced by dry-run'
+          fi
+
+      - name: Fail if dry-run changed tracked files
+        if: always()
+        run: |
+          if [ -s ai_fix_dry_run.diff ]; then
+            echo 'Dry-run modified tracked files; failing the workflow.'
+            cat ai_fix_dry_run.diff
+            exit 1
+          fi
+
+      - name: Upload dry-run diff artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-fix-dry-run-diff
+          path: ai_fix_dry_run.diff
+
+      - name: Post PR dry-run status comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              console.warn('No pull request context available');
+              return;
+            }
+            const diffExists = process.env.DIFF_EXISTS === 'true';
+            const bodyLines = [];
+            bodyLines.push('### AI Auto-Fix PR Dry Run');
+            bodyLines.push('The automated SonarQube AI dry-run completed.');
+            bodyLines.push('');
+            bodyLines.push('Artifacts:');
+            bodyLines.push(`- \\`ai_fix_dry_run.diff\\` available from the workflow artifacts.`);
+            if (diffExists) {
+              bodyLines.push(':warning: The dry run detected tracked source changes and the workflow has failed for review.');
+            } else {
+              bodyLines.push(':white_check_mark: No tracked source changes were produced by the dry run.');
+            }
+            bodyLines.push('');
+            bodyLines.push(`Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`);
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: bodyLines.join('\n')
+            });
+            if (diffExists) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: ['ai-dry-run-failed']
+              });
+            } else {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                name: 'ai-dry-run-failed'
+              }).catch(() => {});
+            }
+        env:
+          DIFF_EXISTS: ${{ steps.capture_diff.outputs.diff_exists }}

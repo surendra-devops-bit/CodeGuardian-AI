@@ -1,0 +1,59 @@
+name: Auto AI SonarQube Fix
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  SONAR_PROJECT_KEY: my-project-key
+  SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+  BUILD_COMMAND: ./gradlew build
+  TEST_COMMAND: ./gradlew test
+  SONAR_SCANNER_CMD: sonar-scanner
+  AI_FIX_BRANCH_PREFIX: auto-ai-fix
+  EMAIL_RECIPIENTS: ${{ secrets.AI_PR_EMAIL_RECIPIENTS }}
+
+jobs:
+  auto-fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install SonarScanner
+        run: |
+          SONAR_SCANNER_VERSION=5.12.1.38131
+          wget -q -O /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}-linux.zip
+          unzip -q /tmp/sonar-scanner.zip -d /tmp
+          echo "/tmp/sonar-scanner-${SONAR_SCANNER_VERSION}-linux/bin" >> $GITHUB_PATH
+
+      - name: Install Python dependencies
+        run: python -m pip install requests
+
+      - name: Run SonarQube scan
+        run: |
+          echo "Running SonarQube scan"
+          ${SONAR_SCANNER_CMD} -Dsonar.projectKey=${SONAR_PROJECT_KEY} -Dsonar.host.url=${SONAR_HOST_URL} -Dsonar.login=${SONAR_TOKEN}
+
+      - name: Run AI auto-fix agent
+        run: |
+          python scripts/auto_ai_fix.py
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
