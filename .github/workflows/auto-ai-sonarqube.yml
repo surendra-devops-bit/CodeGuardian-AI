@@ -2,8 +2,9 @@ name: Auto AI SonarQube Fix
 
 on:
   push:
-    branches:
+    branches-ignore:
       - main
+      - master
   workflow_dispatch:
 
 env:
@@ -27,6 +28,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Java
         uses: actions/setup-java@v3

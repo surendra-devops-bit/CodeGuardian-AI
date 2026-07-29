@@ -347,6 +347,23 @@ def has_uncommitted_changes():
     return bool(result.stdout.strip())
 
 
+def get_current_branch():
+    result = run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], check=False, capture_output=True)
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def branch_has_commits_ahead(branch, target_branch):
+    result = run(['git', 'rev-list', '--count', f'{target_branch}..{branch}'], check=False, capture_output=True)
+    if result.returncode != 0:
+        return False
+    try:
+        return int(result.stdout.strip() or '0') > 0
+    except ValueError:
+        return False
+
+
 def create_branch():
     branch_name = f'{AI_FIX_BRANCH_PREFIX}-{datetime.now(timezone.utc):%Y%m%d%H%M%S}'
     run(['git', 'checkout', '-B', branch_name], check=False)
@@ -371,10 +388,37 @@ def commit_changes(branch_name):
     return True
 
 
+def get_existing_pull_request(branch_name):
+    if not GITHUB_TOKEN or not GITHUB_REPOSITORY:
+        return None
+    api_url = f"{GITHUB_API_URL.rstrip('/')}/repos/{GITHUB_REPOSITORY}/pulls"
+    headers = {
+        'Authorization': f'token {GITHUB_TOKEN}',
+        'Accept': 'application/vnd.github.v3+json',
+    }
+    params = {
+        'state': 'open',
+        'head': f'{GITHUB_REPOSITORY.split("/")[0]}:{branch_name}',
+        'base': TARGET_BRANCH,
+    }
+    response = requests_get(api_url, params=params, headers=headers)
+    response.raise_for_status()
+    prs = response.json()
+    if prs:
+        return prs[0].get('html_url')
+    return None
+
+
 def create_pull_request(branch_name):
     if not GITHUB_TOKEN or not GITHUB_REPOSITORY:
         print('Skipping PR creation: missing GITHUB_TOKEN or GITHUB_REPOSITORY')
         return None
+
+    existing_pr = get_existing_pull_request(branch_name)
+    if existing_pr:
+        print(f'Pull request already exists for {branch_name}: {existing_pr}')
+        return existing_pr
+
     api_url = f"{GITHUB_API_URL.rstrip('/')}/repos/{GITHUB_REPOSITORY}/pulls"
     payload = {
         'title': f'AI auto-fix: SonarQube issues ({branch_name})',
@@ -458,6 +502,19 @@ def main():
     print(f'Found {len(issues)} open SonarQube issue(s)')
 
     if not issues:
+        current_branch = get_current_branch()
+        if current_branch and current_branch != TARGET_BRANCH and branch_has_commits_ahead(current_branch, TARGET_BRANCH):
+            print(f'No SonarQube issues found, but branch {current_branch} is ahead of {TARGET_BRANCH}. Creating PR for current branch.')
+            audit = {'fixed': [], 'failed': [], 'issues': []}
+            branch_name = current_branch
+            pr_url = create_pull_request(branch_name)
+            if pr_url:
+                send_approval_email(pr_url)
+            audit['pr_url'] = pr_url
+            audit['branch_name'] = branch_name
+            audit['quality_gate'] = 'N/A'
+            write_audit(audit)
+            return
         print('No unresolved SonarQube issues found. Exiting.')
         return
 
