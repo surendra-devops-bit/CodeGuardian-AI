@@ -38,6 +38,10 @@ SONAR_PROJECT_KEY = os.getenv('SONAR_PROJECT_KEY')
 LLM_API_KEY = os.getenv('LLM_API_KEY')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 GITHUB_REPOSITORY = os.getenv('GITHUB_REPOSITORY')
+GITHUB_API_URL = os.getenv('GITHUB_API_URL', 'https://api.github.com')
+GITHUB_CLONE_URL = os.getenv('GITHUB_CLONE_URL', '')
+GIT_REMOTE = os.getenv('GIT_REMOTE', 'origin')
+REPO_DIR = os.getenv('REPO_DIR', str(Path.cwd()))
 BUILD_COMMAND = os.getenv('BUILD_COMMAND', './gradlew build')
 TEST_COMMAND = os.getenv('TEST_COMMAND', './gradlew test')
 SONAR_SCANNER_CMD = os.getenv('SONAR_SCANNER_CMD', 'sonar-scanner')
@@ -45,6 +49,7 @@ AI_FIX_BRANCH_PREFIX = os.getenv('AI_FIX_BRANCH_PREFIX', 'auto-ai-fix')
 EMAIL_RECIPIENTS = os.getenv('EMAIL_RECIPIENTS', '')
 SMTP_SERVER = os.getenv('SMTP_SERVER')
 SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
+SMTP_USE_SSL = os.getenv('SMTP_USE_SSL', 'false').lower() in ('1', 'true', 'yes')
 SMTP_USERNAME = os.getenv('SMTP_USERNAME')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
 TARGET_BRANCH = os.getenv('TARGET_BRANCH', 'main')
@@ -70,6 +75,30 @@ def load_dotenv(path: Path):
         k, v = line.split('=', 1)
         if k not in os.environ:
             os.environ[k] = v
+
+
+def is_git_repo(path: Path) -> bool:
+    return (path / '.git').exists()
+
+
+def get_clone_url() -> str:
+    if GITHUB_CLONE_URL:
+        return GITHUB_CLONE_URL
+    if not GITHUB_REPOSITORY:
+        raise RuntimeError('GITHUB_REPOSITORY or GITHUB_CLONE_URL is required to clone the repository')
+    return f'https://github.com/{GITHUB_REPOSITORY}.git'
+
+
+def prepare_repository():
+    repo_path = Path(REPO_DIR)
+    if not repo_path.exists():
+        clone_url = get_clone_url()
+        print(f'Cloning repository from {clone_url} into {repo_path}')
+        run(['git', 'clone', '--depth', '1', clone_url, str(repo_path)])
+    if not is_git_repo(repo_path):
+        raise RuntimeError(f'Repository directory is not a git repository: {repo_path}')
+    os.chdir(repo_path)
+    print(f'Using repository at {repo_path}')
 
 
 def retry(max_attempts=3, backoff=1.0):
@@ -128,9 +157,9 @@ def write_audit(report: dict, path: str = '.ai_fix_report.json'):
 
 def refresh_config():
     global SONAR_HOST_URL, SONAR_TOKEN, SONAR_PROJECT_KEY, LLM_API_KEY
-    global GITHUB_TOKEN, GITHUB_REPOSITORY, BUILD_COMMAND, TEST_COMMAND
+    global GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_API_URL, GITHUB_CLONE_URL, GIT_REMOTE, REPO_DIR, BUILD_COMMAND, TEST_COMMAND
     global SONAR_SCANNER_CMD, AI_FIX_BRANCH_PREFIX, EMAIL_RECIPIENTS
-    global SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD
+    global SMTP_SERVER, SMTP_PORT, SMTP_USE_SSL, SMTP_USERNAME, SMTP_PASSWORD
     global TARGET_BRANCH, MAX_ISSUES
 
     SONAR_HOST_URL = os.getenv('SONAR_HOST_URL')
@@ -139,6 +168,10 @@ def refresh_config():
     LLM_API_KEY = os.getenv('LLM_API_KEY')
     GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
     GITHUB_REPOSITORY = os.getenv('GITHUB_REPOSITORY')
+    GITHUB_API_URL = os.getenv('GITHUB_API_URL', 'https://api.github.com')
+    GITHUB_CLONE_URL = os.getenv('GITHUB_CLONE_URL', '')
+    GIT_REMOTE = os.getenv('GIT_REMOTE', 'origin')
+    REPO_DIR = os.getenv('REPO_DIR', str(Path.cwd()))
     BUILD_COMMAND = os.getenv('BUILD_COMMAND', './gradlew build')
     TEST_COMMAND = os.getenv('TEST_COMMAND', './gradlew test')
     SONAR_SCANNER_CMD = os.getenv('SONAR_SCANNER_CMD', 'sonar-scanner')
@@ -146,6 +179,7 @@ def refresh_config():
     EMAIL_RECIPIENTS = os.getenv('EMAIL_RECIPIENTS', '')
     SMTP_SERVER = os.getenv('SMTP_SERVER')
     SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
+    SMTP_USE_SSL = os.getenv('SMTP_USE_SSL', 'false').lower() in ('1', 'true', 'yes')
     SMTP_USERNAME = os.getenv('SMTP_USERNAME')
     SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
     TARGET_BRANCH = os.getenv('TARGET_BRANCH', 'main')
@@ -330,7 +364,7 @@ def commit_changes(branch_name):
         print('Git commit failed or there was nothing to commit.')
         return False
 
-    push_result = run(['git', 'push', '--set-upstream', 'origin', branch_name], check=False, capture_output=True)
+    push_result = run(['git', 'push', '--set-upstream', GIT_REMOTE, branch_name], check=False, capture_output=True)
     if push_result.returncode != 0:
         print('Git push failed. Review the branch locally if needed.')
         return False
@@ -341,7 +375,7 @@ def create_pull_request(branch_name):
     if not GITHUB_TOKEN or not GITHUB_REPOSITORY:
         print('Skipping PR creation: missing GITHUB_TOKEN or GITHUB_REPOSITORY')
         return None
-    api_url = f'https://api.github.com/repos/{GITHUB_REPOSITORY}/pulls'
+    api_url = f"{GITHUB_API_URL.rstrip('/')}/repos/{GITHUB_REPOSITORY}/pulls"
     payload = {
         'title': f'AI auto-fix: SonarQube issues ({branch_name})',
         'head': branch_name,
@@ -373,8 +407,12 @@ def send_approval_email(pr_url):
         'Review the changes and merge when ready.'
     )
 
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
-        smtp.starttls()
+    use_ssl = SMTP_USE_SSL or SMTP_PORT == 465
+    smtp_client = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+
+    with smtp_client(SMTP_SERVER, SMTP_PORT) as smtp:
+        if not use_ssl:
+            smtp.starttls()
         smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
         smtp.send_message(message)
 
@@ -409,6 +447,7 @@ def main():
     load_dotenv(ROOT / '.env')
     refresh_config()
     args = parse_args()
+    prepare_repository()
 
     try:
         issues = get_sonar_issues()

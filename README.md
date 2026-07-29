@@ -45,6 +45,25 @@ python scripts/auto_ai_fix.py --dry-run
 python scripts/auto_ai_fix.py
 ```
 
+## Local scenario test
+
+Use your `.env` to configure SonarQube, GitHub, LLM, and SMTP settings, then run the workflow locally:
+
+```bash
+python -m pip install -r requirements.txt
+python scripts/auto_ai_fix.py --dry-run
+python scripts/auto_ai_fix.py
+```
+
+This will:
+
+- connect to the SonarQube project at `SONAR_HOST_URL`
+- collect unresolved issues
+- generate fixes and apply them locally
+- create a feature branch prefixed with `auto-ai-fix-`
+- open a pull request against `main`
+- send an approval email when configured
+
 ## Environment variables
 
 Use `.env` or CI secrets for the following:
@@ -59,9 +78,14 @@ Use `.env` or CI secrets for the following:
 - `TEST_COMMAND` (default `./gradlew test`)
 - `SONAR_SCANNER_CMD` (default `sonar-scanner`)
 - `AI_FIX_BRANCH_PREFIX` (default `auto-ai-fix`)
+- `GITHUB_API_URL` (default `https://api.github.com`)
+- `GITHUB_CLONE_URL` (optional, overrides derived clone URL)
+- `GIT_REMOTE` (default `origin`)
+- `REPO_DIR` (default current working directory)
 - `EMAIL_RECIPIENTS`
 - `SMTP_SERVER`
 - `SMTP_PORT` (default `587`)
+- `SMTP_USE_SSL` (default `false`)
 - `SMTP_USERNAME`
 - `SMTP_PASSWORD`
 - `TARGET_BRANCH` (default `main`)
