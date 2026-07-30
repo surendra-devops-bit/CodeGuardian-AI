@@ -5,7 +5,6 @@ on:
 
 jobs:
   ai-dry-run:
-    if: ${{ secrets.SONAR_HOST_URL && secrets.SONAR_TOKEN && secrets.SONAR_PROJECT_KEY && secrets.LLM_API_KEY && secrets.GITHUB_TOKEN }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
