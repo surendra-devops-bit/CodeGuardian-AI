@@ -74,6 +74,7 @@ def test_create_pull_request_posts_to_github(monkeypatch):
         captured['headers'] = kwargs.get('headers')
         return FakeResponse({'html_url': 'https://github.com/owner/repo/pull/1'})
 
+    monkeypatch.setattr(auto_ai_fix, 'requests_get', lambda url, *args, **kwargs: FakeResponse([]))
     monkeypatch.setattr(auto_ai_fix, 'requests_post', fake_requests_post)
 
     pr_url = auto_ai_fix.create_pull_request('auto-ai-fix-123')

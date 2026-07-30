@@ -69,6 +69,8 @@ def test_end_to_end_flow(tmp_path, monkeypatch):
             return FakeResponse({'issues': issues})
         if 'api/qualitygates/project_status' in url:
             return FakeResponse(quality_payload)
+        if 'api.github.com/repos' in url and 'pulls' in url:
+            return FakeResponse([])
         raise RuntimeError(f'Unexpected GET {url}')
 
     def fake_requests_post(url, *args, **kwargs):
@@ -171,6 +173,8 @@ def test_sonar_to_github_pr_flow_with_email_notification(tmp_path, monkeypatch):
             return FakeResponse({'issues': issues})
         if 'api/qualitygates/project_status' in url:
             return FakeResponse(quality_payload)
+        if 'api.github.com/repos' in url and 'pulls' in url:
+            return FakeResponse([])
         raise RuntimeError(f'Unexpected GET {url}')
 
     def fake_requests_post(url, *args, **kwargs):
