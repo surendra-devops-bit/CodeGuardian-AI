@@ -9,8 +9,6 @@ on:
 
 env:
   SONAR_PROJECT_KEY: my-project-key
-  SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
   LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
   BUILD_COMMAND: ./gradlew build
   TEST_COMMAND: ./gradlew test
@@ -56,8 +54,11 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Validate SonarQube settings
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          if [ -z "${{ secrets.SONAR_HOST_URL }}" ] || [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+          if [ -z "$SONAR_HOST_URL" ] || [ -z "$SONAR_TOKEN" ]; then
             echo "ERROR: Missing SonarQube secrets. Please set SONAR_HOST_URL and SONAR_TOKEN."
             exit 1
           fi
@@ -65,10 +66,11 @@ jobs:
 
       - name: Run SonarQube scan
         env:
-          SONAR_TOKEN: ''
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           echo "Running SonarQube scan"
-          ${SONAR_SCANNER_CMD} -Dsonar.projectKey="${SONAR_PROJECT_KEY}" -Dsonar.host.url="${{ secrets.SONAR_HOST_URL }}" -Dsonar.login="${{ secrets.SONAR_TOKEN }}"
+          ${SONAR_SCANNER_CMD} -Dsonar.projectKey="${SONAR_PROJECT_KEY}" -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.login="$SONAR_TOKEN"
 
       - name: Run AI auto-fix agent
         run: |
