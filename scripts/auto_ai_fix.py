@@ -462,6 +462,12 @@ def send_approval_email(pr_url):
 
 
 def run_sonar_scan():
+    if not SONAR_HOST_URL:
+        raise RuntimeError('SONAR_HOST_URL is required to run SonarQube scan')
+    if not SONAR_TOKEN:
+        raise RuntimeError('SONAR_TOKEN is required to run SonarQube scan')
+    if not SONAR_PROJECT_KEY:
+        raise RuntimeError('SONAR_PROJECT_KEY is required to run SonarQube scan')
     run(shlex.split(SONAR_SCANNER_CMD) + [f'-Dsonar.projectKey={SONAR_PROJECT_KEY}', f'-Dsonar.host.url={SONAR_HOST_URL}', f'-Dsonar.login={SONAR_TOKEN}'])
 
 

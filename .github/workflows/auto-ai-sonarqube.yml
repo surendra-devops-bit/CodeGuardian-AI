@@ -55,10 +55,20 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Validate SonarQube settings
+        run: |
+          if [ -z "${{ secrets.SONAR_HOST_URL }}" ] || [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+            echo "ERROR: Missing SonarQube secrets. Please set SONAR_HOST_URL and SONAR_TOKEN."
+            exit 1
+          fi
+          echo "SONAR_HOST_URL is set"
+
       - name: Run SonarQube scan
+        env:
+          SONAR_TOKEN: ''
         run: |
           echo "Running SonarQube scan"
-          ${SONAR_SCANNER_CMD} -Dsonar.projectKey=${SONAR_PROJECT_KEY} -Dsonar.host.url=${SONAR_HOST_URL} -Dsonar.login=${SONAR_TOKEN}
+          ${SONAR_SCANNER_CMD} -Dsonar.projectKey="${SONAR_PROJECT_KEY}" -Dsonar.host.url="${{ secrets.SONAR_HOST_URL }}" -Dsonar.login="${{ secrets.SONAR_TOKEN }}"
 
       - name: Run AI auto-fix agent
         run: |
