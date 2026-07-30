@@ -5,7 +5,6 @@ on:
 
 jobs:
   ai-dry-run:
-    if: ${{ secrets.SONAR_HOST_URL && secrets.SONAR_TOKEN && secrets.SONAR_PROJECT_KEY && secrets.LLM_API_KEY && secrets.GITHUB_TOKEN }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,6 +34,9 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ secrets.GITHUB_API_URL || 'https://api.github.com' }}
+          REPO_DIR: ${{ github.workspace }}
+          GIT_REMOTE: origin
           BUILD_COMMAND: echo 'Skipping build in PR dry-run'
           TEST_COMMAND: echo 'Skipping test in PR dry-run'
           AI_FIX_BRANCH_PREFIX: auto-ai-fix

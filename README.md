@@ -1,5 +1,4 @@
-# CodeGuardian AI Auto-Fix Agent
-
+## CodeGuardian AI Auto-Fix Agent
 This repository contains an automated SonarQube remediation agent that:
 
 - reads SonarQube issues via the Web API
@@ -45,6 +44,25 @@ python scripts/auto_ai_fix.py --dry-run
 python scripts/auto_ai_fix.py
 ```
 
+## Local scenario test
+
+Use your `.env` to configure SonarQube, GitHub, LLM, and SMTP settings, then run the workflow locally:
+
+```bash
+python -m pip install -r requirements.txt
+python scripts/auto_ai_fix.py --dry-run
+python scripts/auto_ai_fix.py
+```
+
+This will:
+
+- connect to the SonarQube project at `SONAR_HOST_URL`
+- collect unresolved issues
+- generate fixes and apply them locally
+- create a feature branch prefixed with `auto-ai-fix-`
+- open a pull request against `main`
+- send an approval email when configured
+
 ## Environment variables
 
 Use `.env` or CI secrets for the following:
@@ -59,9 +77,14 @@ Use `.env` or CI secrets for the following:
 - `TEST_COMMAND` (default `./gradlew test`)
 - `SONAR_SCANNER_CMD` (default `sonar-scanner`)
 - `AI_FIX_BRANCH_PREFIX` (default `auto-ai-fix`)
+- `GITHUB_API_URL` (default `https://api.github.com`)
+- `GITHUB_CLONE_URL` (optional, overrides derived clone URL)
+- `GIT_REMOTE` (default `origin`)
+- `REPO_DIR` (default current working directory)
 - `EMAIL_RECIPIENTS`
 - `SMTP_SERVER`
 - `SMTP_PORT` (default `587`)
+- `SMTP_USE_SSL` (default `false`)
 - `SMTP_USERNAME`
 - `SMTP_PASSWORD`
 - `TARGET_BRANCH` (default `main`)
@@ -83,3 +106,8 @@ pytest -q
 - `auto-ai-sonarqube.yml` runs the SonarQube scan and automation agent on `main`.
 - `auto-ai-pr-dry-run.yml` runs the agent in dry-run mode on pull requests to validate behavior without pushing changes.
 - `auto-ai-pr-dry-run.yml` also captures and uploads a diff artifact named `ai_fix_dry_run.diff` for review.
+
+Note about GitHub Secrets and PRs from forks:
+
+- GitHub Actions does not expose repository secrets to workflows triggered by pull requests from forks for security reasons. If you run the workflows against a PR originating from a fork, `SONAR_HOST_URL` and `SONAR_TOKEN` may appear empty and the run will fail the SonarQube validation step.
+- To test workflows that require secrets, run them from the base repository (push a branch) or trigger `workflow_dispatch` from within the repository where the secrets are defined.

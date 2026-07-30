@@ -13,6 +13,32 @@ Implementation notes:
 - The main automation entry point is [scripts/auto_ai_fix.py](../../scripts/auto_ai_fix.py).
 - The GitHub Actions workflow is [.github/workflows/auto-ai-sonarqube.yml](../../.github/workflows/auto-ai-sonarqube.yml).
 - The agent flow expects SonarQube, LLM, GitHub, and optional SMTP settings to be provided through environment variables or repository secrets.
+- The GitHub token must belong to a collaborator or a user with write access on the configured repository.
+- If the repository’s default branch is `main`, set `TARGET_BRANCH=main`; if it is `master`, set `TARGET_BRANCH=master` or update the default branch accordingly.
+
+Required environment variables:
+- `SONAR_HOST_URL`
+- `SONAR_TOKEN`
+- `SONAR_PROJECT_KEY`
+- `LLM_API_KEY`
+- `GITHUB_TOKEN`
+- `GITHUB_REPOSITORY`
+- `TARGET_BRANCH`
+
+Optional environment variables:
+- `GITHUB_API_URL` (defaults to `https://api.github.com`)
+- `GITHUB_CLONE_URL`
+- `GIT_REMOTE` (defaults to `origin`)
+- `REPO_DIR` (defaults to the current working directory)
+- `AI_FIX_BRANCH_PREFIX` (defaults to `auto-ai-fix`)
+- `BUILD_COMMAND` (defaults to `./gradlew build`)
+- `TEST_COMMAND` (defaults to `./gradlew test`)
+- `EMAIL_RECIPIENTS`
+- `SMTP_SERVER`
+- `SMTP_PORT`
+- `SMTP_USE_SSL`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
 
 Capabilities:
 - Read SonarQube issues through the SonarQube Web API
@@ -26,7 +52,7 @@ Capabilities:
 - Send an approval notification email with the PR link
 
 Usage:
-- Configure `SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY`, `LLM_API_KEY`, and GitHub secrets in your workflow
+- Configure the required environment variables and GitHub secrets for your repo
 - Use the included GitHub Actions workflow `.github/workflows/auto-ai-sonarqube.yml`
-- Ensure the repository has a valid SonarQube scanner and build/test commands available
+- Make sure the authenticated GitHub user has repository collaborator or write access
 - Review auto-generated PRs before merging to keep quality and security in control

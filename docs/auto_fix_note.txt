@@ -1,0 +1,1 @@
+This file is used to verify the auto-fix workflow can create a branch and commit a change for PR creation.

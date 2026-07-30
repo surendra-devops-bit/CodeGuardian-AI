@@ -45,8 +45,9 @@ def test_end_to_end_flow(tmp_path, monkeypatch):
     monkeypatch.setenv('AI_FIX_BRANCH_PREFIX', 'auto-ai-fix')
     monkeypatch.setenv('TARGET_BRANCH', 'main')
     monkeypatch.setenv('EMAIL_RECIPIENTS', 'approver@example.com')
-    monkeypatch.setenv('SMTP_SERVER', 'smtp.example.com')
-    monkeypatch.setenv('SMTP_PORT', '587')
+    monkeypatch.setenv('SMTP_SERVER', 'smtp.gmail.com')
+    monkeypatch.setenv('SMTP_PORT', '465')
+    monkeypatch.setenv('SMTP_USE_SSL', 'true')
     monkeypatch.setenv('SMTP_USERNAME', 'user@example.com')
     monkeypatch.setenv('SMTP_PASSWORD', 'secret')
 
@@ -68,6 +69,8 @@ def test_end_to_end_flow(tmp_path, monkeypatch):
             return FakeResponse({'issues': issues})
         if 'api/qualitygates/project_status' in url:
             return FakeResponse(quality_payload)
+        if 'api.github.com/repos' in url and 'pulls' in url:
+            return FakeResponse([])
         raise RuntimeError(f'Unexpected GET {url}')
 
     def fake_requests_post(url, *args, **kwargs):
@@ -93,16 +96,20 @@ def test_end_to_end_flow(tmp_path, monkeypatch):
 
     class FakeSMTP:
         def __init__(self, server, port):
-            pass
+            self.server = server
+            self.port = port
+            self.connected = True
 
         def starttls(self):
-            pass
+            raise RuntimeError('starttls should not be called when using SSL')
 
         def login(self, username, password):
-            pass
+            assert username == 'user@example.com'
+            assert password == 'secret'
 
         def send_message(self, message):
-            pass
+            assert 'AI agent created PR for SonarQube fixes' in message['Subject']
+            assert 'https://github.com/owner/repo/pull/1' in message.get_content()
 
         def __enter__(self):
             return self
@@ -110,7 +117,7 @@ def test_end_to_end_flow(tmp_path, monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(auto_ai_fix, 'smtplib', types.SimpleNamespace(SMTP=FakeSMTP))
+    monkeypatch.setattr(auto_ai_fix, 'smtplib', types.SimpleNamespace(SMTP_SSL=FakeSMTP, SMTP=FakeSMTP))
 
     monkeypatch.setattr(auto_ai_fix, 'parse_args', lambda argv=None: types.SimpleNamespace(dry_run=False, max_issues=1))
 
@@ -121,6 +128,106 @@ def test_end_to_end_flow(tmp_path, monkeypatch):
     audit_file = Path('.ai_fix_report.json')
     assert audit_file.exists()
     report = json.loads(audit_file.read_text(encoding='utf-8'))
+    assert report['pr_url'] == 'https://github.com/owner/repo/pull/1'
+    assert report['branch_name'].startswith('auto-ai-fix-')
+    assert report['quality_gate'] == 'OK'
+
+
+def test_sonar_to_github_pr_flow_with_email_notification(tmp_path, monkeypatch):
+    sample = tmp_path / 'sample.py'
+    sample.write_text('a = 1\n')
+
+    monkeypatch.setenv('SONAR_HOST_URL', 'https://sonar.example.com')
+    monkeypatch.setenv('SONAR_TOKEN', 'sonar-token')
+    monkeypatch.setenv('SONAR_PROJECT_KEY', 'proj')
+    monkeypatch.setenv('LLM_API_KEY', 'llm-key')
+    monkeypatch.setenv('GITHUB_TOKEN', 'gh-token')
+    monkeypatch.setenv('GITHUB_REPOSITORY', 'owner/repo')
+    monkeypatch.setenv('BUILD_COMMAND', 'echo build-ok')
+    monkeypatch.setenv('TEST_COMMAND', 'echo test-ok')
+    monkeypatch.setenv('SONAR_SCANNER_CMD', 'echo sonar-ok')
+    monkeypatch.setenv('AI_FIX_BRANCH_PREFIX', 'auto-ai-fix')
+    monkeypatch.setenv('TARGET_BRANCH', 'main')
+    monkeypatch.setenv('EMAIL_RECIPIENTS', 'approver@example.com')
+    monkeypatch.setenv('SMTP_SERVER', 'smtp.example.com')
+    monkeypatch.setenv('SMTP_PORT', '465')
+    monkeypatch.setenv('SMTP_USE_SSL', 'true')
+    monkeypatch.setenv('SMTP_USERNAME', 'user@example.com')
+    monkeypatch.setenv('SMTP_PASSWORD', 'secret')
+
+    auto_ai_fix.refresh_config()
+
+    issues = [
+        {
+            'component': f'proj:{sample}',
+            'message': 'Fix issue',
+            'severity': 'MAJOR',
+            'rule': 'py-rule',
+            'line': 1,
+        }
+    ]
+    quality_payload = {'projectStatus': {'status': 'OK'}}
+
+    def fake_requests_get(url, *args, **kwargs):
+        if 'api/issues/search' in url:
+            return FakeResponse({'issues': issues})
+        if 'api/qualitygates/project_status' in url:
+            return FakeResponse(quality_payload)
+        if 'api.github.com/repos' in url and 'pulls' in url:
+            return FakeResponse([])
+        raise RuntimeError(f'Unexpected GET {url}')
+
+    def fake_requests_post(url, *args, **kwargs):
+        if 'api.github.com/repos' in url:
+            return FakeResponse({'html_url': 'https://github.com/owner/repo/pull/1'})
+        raise RuntimeError(f'Unexpected POST {url}')
+
+    monkeypatch.setattr(auto_ai_fix, 'requests_get', fake_requests_get)
+    monkeypatch.setattr(auto_ai_fix, 'requests_post', fake_requests_post)
+    monkeypatch.setattr(auto_ai_fix, 'call_llm', lambda prompt: 'a = 2\n')
+
+    captured_cmds = []
+
+    def fake_run(cmd, check=True, capture_output=False, env=None):
+        captured_cmds.append(cmd)
+        if cmd[:3] == ['git', 'status', '--porcelain']:
+            return CompletedProcess(cmd, 0, stdout=' M sample.py', stderr='')
+        return CompletedProcess(cmd, 0, stdout='', stderr='')
+
+    monkeypatch.setattr(auto_ai_fix, 'run', fake_run)
+
+    class FakeSMTP:
+        def __init__(self, server, port):
+            self.server = server
+            self.port = port
+
+        def starttls(self):
+            raise AssertionError('starttls should not be called when using SMTP_SSL')
+
+        def login(self, username, password):
+            assert username == 'user@example.com'
+            assert password == 'secret'
+
+        def send_message(self, message):
+            assert message['Subject'] == 'AI agent created PR for SonarQube fixes'
+            assert 'https://github.com/owner/repo/pull/1' in message.get_content()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(auto_ai_fix, 'smtplib', types.SimpleNamespace(SMTP_SSL=FakeSMTP, SMTP=FakeSMTP))
+    monkeypatch.setattr(auto_ai_fix, 'parse_args', lambda argv=None: types.SimpleNamespace(dry_run=False, max_issues=1))
+
+    auto_ai_fix.main()
+
+    assert sample.read_text() == 'a = 2\n'
+    assert any(cmd[:3] == ['git', 'checkout', '-B'] for cmd in captured_cmds)
+    assert any(cmd[0] == 'git' and cmd[1] == 'push' for cmd in captured_cmds)
+    assert any(cmd[0] == 'echo' or cmd[0] == 'git' for cmd in captured_cmds)
+    report = json.loads(Path('.ai_fix_report.json').read_text(encoding='utf-8'))
     assert report['pr_url'] == 'https://github.com/owner/repo/pull/1'
     assert report['branch_name'].startswith('auto-ai-fix-')
     assert report['quality_gate'] == 'OK'
