@@ -106,3 +106,8 @@ pytest -q
 - `auto-ai-sonarqube.yml` runs the SonarQube scan and automation agent on `main`.
 - `auto-ai-pr-dry-run.yml` runs the agent in dry-run mode on pull requests to validate behavior without pushing changes.
 - `auto-ai-pr-dry-run.yml` also captures and uploads a diff artifact named `ai_fix_dry_run.diff` for review.
+
+Note about GitHub Secrets and PRs from forks:
+
+- GitHub Actions does not expose repository secrets to workflows triggered by pull requests from forks for security reasons. If you run the workflows against a PR originating from a fork, `SONAR_HOST_URL` and `SONAR_TOKEN` may appear empty and the run will fail the SonarQube validation step.
+- To test workflows that require secrets, run them from the base repository (push a branch) or trigger `workflow_dispatch` from within the repository where the secrets are defined.
